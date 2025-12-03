@@ -1,17 +1,27 @@
 问题背景
 []
 https://vanna.ai/diagrams/problem-solution.svg
-## 1、流程图
+## 1、交互展示
 
+## 2、信息存储机制
 
-1）整体流程是怎么样的？
+1）文本信息的存储
+Agent会判断当前的历史对话中是否有关键信息需要存储，当有需要时调用save_text_memory工具：
+```
+**Content:** Chiwen平台的运行记录存储在以T_Run开头的表中：T_RunProcessRecord和T_RunRecord。这些表可能包含系统中流程和运行的执行数据。 **Timestamp:** 2025-12-03T14:21:58.273841 **ID:** `ba94467c-37f7-46e6-bd47-a78627217a1d`
+```
+```
+**Content:** 数据库“runcontroller”包含与审计日志（AbpAuditLogs、AbpAuditLogActions）、实体变更（AbpEntityChanges、AbpEntityPropertyChanges）、Quartz调度器（QRTZ_%表）、错误处理记录（T_Error%Record）、流程执行记录（T_Run%、T_ProcessCommandRecord）以及甘特图数据（T_GanttDataRecord）相关的表。 **Timestamp:** 2025-12-03T14:21:26.290732 **ID:** `cb281337-f2fc-47d7-8bf7-8489df2e3d8d`
+```
+2）问题-SQL 信息的存储
+Agent会根据工具是否执行成功及有效性来判断是否调用save_tool存储对应的问题对：
+```
+帮我查找销售最好的商品
+   Args: {'sql': 'SELECT product_name, SUM(quantity * price) as total_sales FROM sales GROUP BY product_name ORDER BY total_sales DESC LIMIT 10'}
+```
 
-2）
-
-## 2、数据查询
-1）查询内容太多怎么处理？Dual output是什么
-
-每次SQL查询成功后，vanna仅保留前1000个字符，并将完整的查询结果保存为文件，最后附加文件路径以便绘制时获取完整数据，比如下面是SQL `SELECT name FROM sqlite_master WHERE type='table'` 的查询结果：
+3）SQL查询的数据
+查询返回的数据采用 Dual output 分两份输出：详细的数据保存到csv文件，给大模型的内容是数据摘要和数据文件名称，当需要可视化数据时从文件中读取数据：
 ```txt
 name
 customers
@@ -23,48 +33,10 @@ Results saved to file: query_results_08ea6061.csv
 
 **IMPORTANT: FOR VISUALIZE_DATA USE FILENAME: query_results_08ea6061.csv**
 ```
-也会记录一些关键的信息：
-```
-**Content:** Chiwen平台的运行记录存储在以T_Run开头的表中：T_RunProcessRecord和T_RunRecord。这些表可能包含系统中流程和运行的执行数据。 **Timestamp:** 2025-12-03T14:21:58.273841 **ID:** `ba94467c-37f7-46e6-bd47-a78627217a1d`
-```
-```
-**Content:** 数据库“runcontroller”包含与审计日志（AbpAuditLogs、AbpAuditLogActions）、实体变更（AbpEntityChanges、AbpEntityPropertyChanges）、Quartz调度器（QRTZ_%表）、错误处理记录（T_Error%Record）、流程执行记录（T_Run%、T_ProcessCommandRecord）以及甘特图数据（T_GanttDataRecord）相关的表。 **Timestamp:** 2025-12-03T14:21:26.290732 **ID:** `cb281337-f2fc-47d7-8bf7-8489df2e3d8d`
-```
-## 2、内容记录
 
-相似性搜索：
-
-内置一个轻量级的相似性计算方式：
-Jaccard + difflib
-
-当匹配到记录后，将记录作为工具调用结果：
-```txt
-Found 1 similar tool usage pattern(s):
-
-1. run_sql (similarity: 0.83)
-   Question: 帮我查找销售最好的商品
-   Args: {'sql': 'SELECT product_name, SUM(quantity * price) as total_sales FROM sales GROUP BY product_name ORDER BY total_sales DESC LIMIT 10'}
-```
-
-2）查询结果的图表是如何绘制的？
-
-## 3、身份隔离
-1）是怎么限定用户权限的？
-
-## 4、和前端的交互方面
-
-
-## 和sanic-web的对比
-
-1、sanic-web每次查找前需要进行schema的匹配，匹配的准确性直接决定了后续查询的正确性（比如没有匹配出的表中没有目标数据表，则后续的查找是直接错误的）
-
-2、sanic-web将可视化工具封装为mcp服务进行调用，可以提供更灵活的展现方式，vanna根据数据形式决定展示方式，不一定能以最佳的效果展示
-
-## 不足
-1、vanna会记录正确执行工具调用，不管是否重复存在过，当用户反复询问同一个问题时，这些问题都会被记录，在下次遇到相同的问题时，搜索出来的内容都是相同的，缺乏多样性。降低了参考意义。
-- 可以在记录前增加过滤机制，避免重复的记录。使记忆库更有参考价值
-
-2、
+## 3、信息调取机制
+1）文本信息调取
+这些信息会加入到系统提示词中——根据对话动态生成系统提示词：
 
 ```txt
 You are Vanna, an AI data analyst assistant created to help users with data analysis tasks. Today's date is 2025-12-03.
@@ -120,3 +92,36 @@ The following domain knowledge and context from prior interactions may be releva
 • 销售数据分析表包括：T_Sales（销售记录），T_SalesTarget（销售目标），T_SalesPerformance（销售业绩），T_SalesRegion（销售地区）。
 • 知识库文档管理：T_Document（文档），T_DocumentCategory（文档分类），T_DocumentVersion（文档版本），T_DocumentAccess（文档访问权限）。
 ```
+
+2）问题-SQL信息的调取
+轻量级的相似性搜索方式：
+Jaccard + difflib
+
+当匹配到记录后，将记录作为工具调用结果：
+```txt
+Found 1 similar tool usage pattern(s):
+
+1. run_sql (similarity: 0.83)
+   Question: 帮我查找销售最好的商品
+   Args: {'sql': 'SELECT product_name, SUM(quantity * price) as total_sales FROM sales GROUP BY product_name ORDER BY total_sales DESC LIMIT 10'}
+```
+
+## 4、权限隔离
+1）工具的调用可以设置权限
+并不是所有的用户都可以增删知识库信息
+只有管理员可以，因此管理员可以对知识库进行管理，删除不必要的知识，剩下的知识作为有效的信息。
+
+## 5、查询结果的图表是如何绘制的？
+先通过ploty库转为json格式，再传递给前端进行绘制
+
+## 和sanic-web的对比
+
+1、sanic-web每次查找前需要进行schema的匹配，匹配的准确性直接决定了后续查询的正确性（比如没有匹配出的表中没有目标数据表，则后续的查找是直接错误的）
+
+2、sanic-web将可视化工具封装为mcp服务进行调用，可以提供更灵活的展现方式，vanna根据数据形式决定展示方式，不一定能以最佳的效果展示
+
+## 不足
+1、vanna会记录正确执行工具调用，不管是否重复存在过，当用户反复询问同一个问题时，这些问题都会被记录，在下次遇到相同的问题时，搜索出来的内容都是相同的，缺乏多样性。降低了参考意义。
+- 可以在记录前增加过滤机制，避免重复的记录。使记忆库更有参考价值
+
+

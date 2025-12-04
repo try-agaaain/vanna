@@ -1,6 +1,9 @@
 问题背景
 []
 https://vanna.ai/diagrams/problem-solution.svg
+
+http://image109.360doc.com/DownloadImg/2024/01/2020/278573575_1_2024012008030854_wm.png
+
 ## 1、交互展示
 
 ## 2、信息存储机制

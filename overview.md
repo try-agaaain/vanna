@@ -5,6 +5,9 @@ https://vanna.ai/diagrams/problem-solution.svg
 
 ## 2、信息存储机制
 
+![save_info](./img/save_info.svg)
+
+
 1）文本信息的存储
 Agent会判断当前的历史对话中是否有关键信息需要存储，当有需要时调用save_text_memory工具：
 ```
@@ -13,7 +16,7 @@ Agent会判断当前的历史对话中是否有关键信息需要存储，当有
 ```
 **Content:** 数据库“runcontroller”包含与审计日志（AbpAuditLogs、AbpAuditLogActions）、实体变更（AbpEntityChanges、AbpEntityPropertyChanges）、Quartz调度器（QRTZ_%表）、错误处理记录（T_Error%Record）、流程执行记录（T_Run%、T_ProcessCommandRecord）以及甘特图数据（T_GanttDataRecord）相关的表。 **Timestamp:** 2025-12-03T14:21:26.290732 **ID:** `cb281337-f2fc-47d7-8bf7-8489df2e3d8d`
 ```
-2）问题-SQL 信息的存储
+2）问题-SQL
 Agent会根据工具是否执行成功及有效性来判断是否调用save_tool存储对应的问题对：
 ```
 帮我查找销售最好的商品
@@ -116,12 +119,32 @@ Found 1 similar tool usage pattern(s):
 
 ## 和sanic-web的对比
 
-1、sanic-web每次查找前需要进行schema的匹配，匹配的准确性直接决定了后续查询的正确性（比如没有匹配出的表中没有目标数据表，则后续的查找是直接错误的）
+1、信息的沉淀
+1）sanic-web将表的schema作为知识库，这些信息是静态的，在交互过程中，sanic-web可能会发现表中的重要信息或表之间的关联，但这些关键信息并不会被沉淀，仅在当前对话中存在
+2）vanna将信息分为两类，一类是它探索到的关键信息，这类信息会动态加载到系统提示词中，为当前对话提供有效线索；另一类信息是和用户问题相关的成功执行的工具调用，它能作为一种辅助信息帮助模型更好的知道当前问题该调用哪些工具，以及这些工具的正确参数传递方式；
+vanna会将和用户交互中产生的信息沉淀下来，当然这些信息的有效性取决于大模型本身的能力，大模型记录的信息并不一定是有效的，但vanna中这些信息是可管理的，管理员可以删除无效的信息以构建高质量的信息库。
 
-2、sanic-web将可视化工具封装为mcp服务进行调用，可以提供更灵活的展现方式，vanna根据数据形式决定展示方式，不一定能以最佳的效果展示
+2、信息探索的自由度
+1）sanic-web是一个固定的流程：查schema-> 生成sql -> 执行sql -> 绘制图表 -> 总结，自由度有限，因此更加可控。
+2）vanna采用React Agent方式，能灵活的调用提供的工具，因此能更自由的探索数据库中的信息，以及库表之间的关联。
 
-## 不足
-1、vanna会记录正确执行工具调用，不管是否重复存在过，当用户反复询问同一个问题时，这些问题都会被记录，在下次遇到相同的问题时，搜索出来的内容都是相同的，缺乏多样性。降低了参考意义。
-- 可以在记录前增加过滤机制，避免重复的记录。使记忆库更有参考价值
+3、数据展示方面
+1）sanic-web将可视化工具封装为mcp服务进行调用，由大模型决定展示方式，在实践中展示效果更美观；
+2）vanna根据数据形式决定展示方式，不一定能以最佳的效果展示；
+
+4、权限控制方面
+1）sanic-web中没有权限管理和数据库用户的权限直接关联
+2）①vanna中可以设置用户组，工具的调用权限和用户所在组关联，比如search_saved_correct_tool_uses可以设置为管理员权限组，普通用户没有调用权；②vanna中提供钩子方法修改工具的调用参数以增强工具的权限管理，例如SQL语句中限定部门：
+
+```sql
+if "admin" in user.group_memberships:  
+    return args  # 管理员看到所有数据  
+elif "analyst" in user.group_memberships:  
+    modified_message = args.message + " WHERE department='analytics'"  
+    return SimpleToolArgs(message=modified_message)  
+else:  
+    modified_message = args.message + f" WHERE user_id='{user.id}'"  
+    return SimpleToolArgs(message=modified_message)
+```
 
 
